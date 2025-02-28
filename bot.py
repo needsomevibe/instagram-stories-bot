@@ -18,6 +18,7 @@ import queue
 import socket
 import dns.resolver
 import requests.packages.urllib3.util.connection as urllib3_cn
+from keep_alive import keep_alive
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -1334,6 +1335,10 @@ def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота...")
     try:
+        # Запускаем веб-сервер для keep-alive
+        keep_alive()
+        logger.info("Keep-alive сервер запущен")
+        
         # Инициализируем файлы и загружаем данные
         initialize_files()
         load_user_data()
@@ -1349,8 +1354,7 @@ def main():
 
         updater = Updater(TELEGRAM_TOKEN, use_context=True)
         dp = updater.dispatcher
-        logger.info("Updater создан")
-
+        
         # Добавляем обработчики команд
         dp.add_handler(CommandHandler("start", start))
         dp.add_handler(CommandHandler("help", help_command))
@@ -1359,23 +1363,10 @@ def main():
         dp.add_handler(CommandHandler("list", list_subscriptions))
         dp.add_handler(CommandHandler("loadstories", load_all_current_stories))
         dp.add_handler(CallbackQueryHandler(button_handler))
-        logger.info("Обработчики команд добавлены")
 
         # Запускаем проверку каждые 10 минут
-        updater.job_queue.run_repeating(
-            check_new_content, 
-            interval=600,  # 10 минут
-            first=10  # Первая проверка через 10 секунд после запуска
-        )
-        logger.info("Добавлена проверка контента каждые 10 минут")
-
-        # Очистка старых историй каждые 2 часа
-        updater.job_queue.run_repeating(
-            lambda ctx: cleanup_old_stories(), 
-            interval=7200,  # 2 часа
-            first=7200  # Первая очистка через 2 часа
-        )
-        logger.info("Добавлена очистка историй каждые 2 часа")
+        updater.job_queue.run_repeating(check_new_content, interval=600, first=10)
+        updater.job_queue.run_repeating(lambda ctx: cleanup_old_stories(), interval=7200, first=7200)
 
         logger.info("Бот запущен и готов к работе")
         updater.start_polling(timeout=30, drop_pending_updates=True)
@@ -1385,4 +1376,5 @@ def main():
         raise
 
 if __name__ == '__main__':
+    keep_alive()
     main()
