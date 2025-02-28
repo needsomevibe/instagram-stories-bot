@@ -1,0 +1,27 @@
+# Виртуальное окружение
+venv/
+env/
+.env/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Файлы сессий и логов
+session.json
+bot.log
+
+# Файлы данных
+user_data.json
+subscriptions.json
+users.txt
+
+# Временные файлы
+temp_*/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp 
