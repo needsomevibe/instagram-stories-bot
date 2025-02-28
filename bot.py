@@ -1,5 +1,4 @@
 from instagrapi import Client
-from keep_alive import keep_alive
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, LabeledPrice, Invoice, PreCheckoutQuery
 from telegram.ext import PreCheckoutQueryHandler
@@ -20,6 +19,8 @@ import socket
 import dns.resolver
 import requests.packages.urllib3.util.connection as urllib3_cn
 from keep_alive import keep_alive
+import signal
+import sys
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -261,7 +262,13 @@ def save_user_data():
             data = {
                 'subscriptions': user_subscriptions,
                 'posts': last_posts,
-                'stories': last_stories
+                'stories': {
+                    user_id: {
+                        username: list(stories) 
+                        for username, stories in user_stories.items()
+                    }
+                    for user_id, user_stories in last_stories.items()
+                }
             }
             with open('user_data.json', 'w') as f:
                 json.dump(data, f)
@@ -1108,9 +1115,13 @@ def button_handler(update, context):
     """Обработчик нажатий на кнопки"""
     query = update.callback_query
     user_id = str(query.from_user.id)
-    log_user_action(user_id, "Нажал кнопку", f"действие: {query.data}")
-
+    
     try:
+        # Сразу отвечаем на callback query чтобы избежать таймаута
+        query.answer()
+        
+        log_user_action(user_id, "Нажал кнопку", f"действие: {query.data}")
+
         if query.data == 'back_to_menu':
             log_bot_action("Возврат в меню", f"user_id: {user_id}")
             message = (
@@ -1121,7 +1132,7 @@ def button_handler(update, context):
                 "Выберите действие:"
             )
             query.edit_message_text(text=message, reply_markup=get_main_menu_keyboard())
-            query.answer()
+            
         elif query.data == 'subscription_info':
             log_bot_action("Просмотр информации о подписке", f"user_id: {user_id}")
             show_subscription_info(query, context)
@@ -1170,13 +1181,18 @@ def button_handler(update, context):
                     query.answer("❌ Ошибка при создании платежа")
                 return
         
-        query.answer()
+    except telegram.error.BadRequest as e:
+        if "Query is too old" in str(e):
+            # Если запрос устарел, отправляем новое сообщение
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="Пожалуйста, попробуйте снова",
+                reply_markup=get_main_menu_keyboard()
+            )
+        else:
+            logger.error(f"Ошибка в обработчике кнопок: {str(e)}")
     except Exception as e:
         logger.error(f"Ошибка в обработчике кнопок: {str(e)}")
-        try:
-            query.answer("Произошла ошибка. Попробуйте позже.")
-        except:
-            pass
 
 def pre_checkout_handler(update, context):
     """Предварительная проверка платежа"""
@@ -1332,10 +1348,22 @@ def auth_instagram(update=None, context=None):
             status_message.edit_text(error_message, reply_markup=get_back_to_menu_keyboard())
         return False
 
+def signal_handler(signum, frame):
+    """Обработчик сигналов для корректного завершения"""
+    logger.info(f"Получен сигнал {signum}, завершаем работу...")
+    save_user_data()
+    save_subscription_data()
+    logger.info("Данные сохранены, завершение работы")
+    sys.exit(0)
+
 def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота...")
     try:
+        # Регистрируем обработчик сигналов
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
         # Запускаем веб-сервер для keep-alive
         keep_alive()
         logger.info("Keep-alive сервер запущен")
